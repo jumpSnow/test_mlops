@@ -1,0 +1,62 @@
+name: "Run experiments with JarvisLabs and DVCLive"
+description: "Run experiments with JarvisLabs and DVCLive"
+inputs:
+  CUR_BRANCH:
+    required: true
+  CUR_PR_ID:
+    required: true
+  GDRIVE_CREDENTIAL:
+    required: true
+  GH_ACCESS_TOKEN:
+    required: true
+  JARVISLABS_ID:
+    required: true
+  JARVISLABS_ACCESS_TOKEN:
+    required: true
+runs:
+  using: "composite"
+  steps:      
+      - name: prepare script
+        env:
+          CUR_BRANCH: ${{ inputs.CUR_BRANCH }}
+          CUR_PR_ID: ${{ inputs.CUR_PR_ID }}
+          GDRIVE_CREDENTIAL: ${{ inputs.GDRIVE_CREDENTIAL }}
+          GH_ACCESS_TOKEN: ${{ inputs.GH_ACCESS_TOKEN }}
+          CLOUD_ID: ${{ inputs.JARVISLABS_ID }}
+          CLOUD_AT: ${{ inputs.JARVISLABS_ACCESS_TOKEN }}
+        run: |
+          envsubst \
+            '$CUR_BRANCH, \
+             $CUR_PR_ID, \
+             $GDRIVE_CREDENTIAL, \
+             $GH_ACCESS_TOKEN, \
+             $CLOUD_ID, \
+             $CLOUD_AT' \
+             < scripts/experiments.sh \
+             > scripts/experiments_tmp.sh
+             
+      - name: install jarvislabs client 
+        run: |
+          pip install typer
+          pip install git+https://github.com/jarvislabsai/jlclient.git
+          
+      - name: add script to jarvislabs
+        id: add_script
+        run: |
+          python clouds/jarvislabs.py \
+            script add \
+              ${{ inputs.JARVISLABS_ACCESS_TOKEN }} ${{ inputs.JARVISLABS_ID }} scripts/experiments_tmp.sh \
+                > outputs.txt
+          echo "::set-output name=script_id::$(cat outputs.txt)"
+          
+      - name: create vm on jarvislabs
+        run: |
+          python clouds/jarvislabs.py \
+            vm create \
+              ${{ inputs.JARVISLABS_ACCESS_TOKEN }} ${{ inputs.JARVISLABS_ID }} ${{ steps.add_script.outputs.script_id }}
+              
+      - name: remove script from jarvislabs
+        run: |
+          python clouds/jarvislabs.py \
+            script remove \
+              ${{ inputs.JARVISLABS_ACCESS_TOKEN }} ${{ inputs.JARVISLABS_ID }} ${{ steps.add_script.outputs.script_id }}
